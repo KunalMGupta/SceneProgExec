@@ -49,7 +49,7 @@ Once installed, you can use `sceneprogexec` globally.
 
 ### **🔹 Run a Python Script Inside Blender**
 ```bash
-sceneprogexec run my_script.py
+sceneprogexec run my_script.py --target my_scene.blend
 ```
 ✅ Runs `my_script.py` inside **Blender**.
 
@@ -79,30 +79,6 @@ sceneprogexec reset
 
 ---
 
-## 🔄 **Example Workflow**
-
-1️⃣ **Run a script inside Blender**
-```bash
-sceneprogexec run my_script.py
-```
-
-2️⃣ **Install a package inside Blender**
-```bash
-sceneprogexec install scipy
-```
-
-3️⃣ **Perform a full reset and reinstall packages**
-```bash
-sceneprogexec install numpy scipy --reset
-```
-
-4️⃣ **Remove all third-party packages**
-```bash
-sceneprogexec reset
-```
-
----
-
 ## 🏗️ **Using as a Python Module**
 SceneProgExec can also be **imported and used in Python scripts**:
 
@@ -113,6 +89,12 @@ executor = SceneProgExec()
 executor.install_packages(["numpy"])
 executor.run_script("my_script.py")
 executor._delete_all_third_party_packages()  # Hard reset
+
+script = """
+import bpy
+print("Hello, World!")
+"""
+executor(script, target="test.blend")
 ```
 
 ---

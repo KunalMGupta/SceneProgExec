@@ -1,18 +1,22 @@
-from setuptools import setup
+from setuptools import setup, find_packages
+
+with open("README.md", "r", encoding="utf-8") as f:
+    long_description = f.read()
 
 setup(
     name="sceneprogexec",
     version="0.1.0",
-    py_modules=["sceneprogexec"],
+    packages=find_packages(),  # Automatically finds the 'sceneprogexec' package (and any sub-packages)
     entry_points={
         "console_scripts": [
-            "sceneprogexec=sceneprogexec:main",  # Creates global CLI command `sceneprog`
+            # If 'main()' is defined in exec.py, reference it here.
+            "sceneprogexec=sceneprogexec.exec:main",
         ],
     },
-    install_requires=[],
+    install_requires=[],  # Add any dependencies here
     author="Kunal Gupta",
     description="A CLI and Python module for executing Blender scripts and managing Blender's Python environment. Built to support SceneProg projects.",
-    long_description=open("README.md").read(),
+    long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/KunalMGupta/SceneProgExec",
     classifiers=[
