@@ -208,32 +208,59 @@ export BLENDER_PYTHON=/Applications/Blender.app/Contents/Resources/4.3/python/bi
 
     def run_script(self, script_path, show_output=False, target=None):
         """
-        Runs a given Python script inside Blender, saving
-        to the `.blend` path specified by `target` (or default).
+        Auto-inject script_path's directory into sys.path, run script, and save .blend.
+        This allows imports from the same directory (like `import api`) to work automatically.
         """
         if not os.path.exists(script_path):
             print(f"❌ Error: Script {script_path} not found.")
             sys.exit(1)
-
         if target is None:
             target = self.output_blend
 
-        print(f"🚀 Running script {script_path} in Blender and saving to {target}...")
+        script_abs = os.path.abspath(script_path)
+        script_dir = os.path.dirname(script_abs)
 
-        # We append a small Python one-liner that saves the .blend file
-        blender_cmd = (
-            f"{self.blender_path} --background --python {script_path} "
-            f"--python-expr \"import bpy; bpy.ops.wm.save_mainfile(filepath=r'{target}')\" "
+        # We'll create a temporary "wrapper script" that:
+        #  1) Adds `script_path`'s directory to sys.path
+        #  2) Reads and exec's the original script
+        #  3) Saves the .blend file
+        wrapper_script = os.path.join(self.tmp_dir, "wrapper_script.py")
+
+        wrapper_code = f"""\
+import sys, os
+
+# Add the directory of the user script to sys.path
+user_script_path = r"{script_abs}"
+user_script_dir = r"{script_dir}"
+if user_script_dir not in sys.path:
+    sys.path.insert(0, user_script_dir)
+
+# Now run the original script
+with open(user_script_path, "rb") as f:
+    code = compile(f.read(), user_script_path, "exec")
+exec(code, {{}}, {{}})
+
+# Finally, save the .blend file
+import bpy
+bpy.ops.wm.save_mainfile(filepath=r"{os.path.abspath(target)}")
+"""
+
+        with open(wrapper_script, "w") as f:
+            f.write(wrapper_code)
+
+        print(f"🚀 Running script {script_path} in Blender (via wrapper) and saving to {target}...")
+
+        cmd = (
+            f"{self.blender_path} --background --python {wrapper_script} "
             f"2> {self.log_path}"
         )
-        os.system(blender_cmd)
+        os.system(cmd)
 
-        # Read output log
+        # Read Blender's stderr (the log)
         with open(self.log_path, "r") as log_file:
             blender_output = log_file.read().strip()
 
         self.cleanup()
-
         if show_output:
             print(blender_output)
 
