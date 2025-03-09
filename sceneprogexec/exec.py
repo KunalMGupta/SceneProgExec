@@ -16,6 +16,27 @@ class SceneProgExecutor:
         blender_python = os.getenv("BLENDER_PYTHON")
 
         if blender_path is None or blender_python is None:
+            from .path_auto_detection import find_blender_path, find_blender_python_path
+            
+            print("The environment variable BLENDER_PATH or BLENDER_PYTHON is not set, attempting automatic detection...")
+            detected_blender_path = find_blender_path()
+            
+            if detected_blender_path:
+                detected_python_path = find_blender_python_path(detected_blender_path)
+                
+                if detected_python_path:
+                    print(f"Automatically detected Blender path: {detected_blender_path}")
+                    print(f"Automatically detected Python path: {detected_python_path}")
+                    
+                    # Set environment variables for subsequent use
+                    os.environ["BLENDER_PATH"] = detected_blender_path
+                    os.environ["BLENDER_PYTHON"] = detected_python_path
+                    
+                    # Update the variables of the current instance
+                    blender_path = detected_blender_path
+                    blender_python = detected_python_path
+
+        if blender_path is None or blender_python is None:
             msg = """
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 BLENDER_PATH and BLENDER_PYTHON environment variables must be set.
