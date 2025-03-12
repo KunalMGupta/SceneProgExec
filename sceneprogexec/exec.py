@@ -154,6 +154,7 @@ bpy.ops.wm.save_mainfile(filepath=r"{os.path.abspath(target)}")
             self._delete_all_third_party_packages()
             self._delete_user_modules()
 
+        self.log_path = os.path.join(os.getcwd(), "blender_pip_log.txt")
         for package in packages:
             print(f"📦 Installing {package} inside Blender's Python...")
             os.system(f"{self.blender_python} -m pip install {package} --force 2> {self.log_path}")
@@ -336,11 +337,12 @@ def main():
     run_parser.add_argument("--max_attempts", default=5, type=int)
    
     args = parser.parse_args()
-    executor = SceneProgExecWithDebugger(api_path=args.api_path, max_attempts=args.max_attempts)
-
+    
     if args.command == "install":
+        executor = SceneProgExec()
         executor.install_packages(args.packages, hard_reset=args.reset)
     elif args.command == "run":
+        executor = SceneProgExecWithDebugger(api_path=args.api_path, max_attempts=args.max_attempts)
         script, traceback = executor.run_script(args.script_path, show_output=True, target=args.target, debug=args.debug, silent=args.silent)
         print("*********** SCRIPT ***********")
         print(script)
