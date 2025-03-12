@@ -5,12 +5,12 @@ with open("README.md", "r", encoding="utf-8") as f:
 
 setup(
     name="sceneprogexec",
-    version="0.1.2",
+    version="0.1.4",
     packages=find_packages(),  # Automatically finds the 'sceneprogexec' package (and any sub-packages)
     entry_points={
         "console_scripts": [
             # If 'main()' is defined in exec.py, reference it here.
-            "sceneprogexec=sceneprogexec.execdb:main",
+            "sceneprogexec=sceneprogexec:main",
         ],
     },
     install_requires=[],  # Add any dependencies here

@@ -5,17 +5,64 @@ import subprocess
 import shutil
 import argparse
 import sys
-import tempfile
+from sceneprogllm import LLM
+from tqdm import tqdm
+import platform
 
-class SceneProgExecutor:
+class BlenderPythonDetector:
+    def __init__(self):
+        pass
+
+    def find_blender_path(self):
+        system = platform.system()
+        if system == "Darwin":
+            # print("Running on macOS")
+            if os.path.exists("/Applications/Blender.app/Contents/MacOS/Blender"):
+                return "/Applications/Blender.app/Contents/MacOS/Blender"
+        else:
+            print("Blender not found")
+            return None
+        # TODO: Add Linux and Windows paths
+        # elif system == "Linux":
+        # elif system == "Windows":
+
+    def find_blender_python_path(self, blender_path):
+        system = platform.system()
+        if not blender_path:
+            return None
+
+        if system == "Darwin":  # macOS
+            # /Applications/Blender.app/Contents/MacOS/Blender 
+            base_dir = os.path.dirname(os.path.dirname(blender_path))
+
+            # different versions of blender have different versions of python in Resources
+            resources_dir = os.path.join(base_dir, "Resources")
+
+            # We only care the newest version of python in Resources now
+            # export BLENDER_PYTHON=/Applications/Blender.app/Contents/Resources/4.3/python/bin/python3.11
+            # TODO: Compatible with different versions of Blender
+            if os.path.exists(os.path.join(resources_dir, "4.3", "python", "bin", "python3.11")):
+                python_path = os.path.join(resources_dir, "4.3", "python", "bin", "python3.11")
+                return python_path
+            else:
+                print("Blender Python not found")
+                return None
+
+        # TODO: Add Linux and Windows paths
+        # elif system == "Linux":
+        # elif system == "Windows":
+
+    def __call__(self):
+        detected_blender_path = self.find_blender_path()
+        detected_python_path = self.find_blender_python_path(detected_blender_path)
+        return detected_blender_path, detected_python_path            
+
+class SceneProgExec:
     def __init__(self, output_blend="scene_output.blend"):
-        """
-        Initializes SceneProgExecutor with script execution and package management capabilities.
-        """
-        blender_path = os.getenv("BLENDER_PATH")
-        blender_python = os.getenv("BLENDER_PYTHON")
 
-        if blender_path is None or blender_python is None:
+        self.blender_path, self.blender_python = BlenderPythonDetector()()
+        
+        if self.blender_path is None or self.blender_python is None:
             msg = """
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 BLENDER_PATH and BLENDER_PYTHON environment variables must be set.
@@ -26,28 +73,22 @@ export BLENDER_PYTHON=/Applications/Blender.app/Contents/Resources/4.3/python/bi
             """
             raise Exception(msg)
         
-        self.blender_path = blender_path
-        self.blender_python = blender_python
-        self.output_blend = output_blend  # Default .blend filename if none specified
-        self.tmp_dir = "blender_tmp"
-        self.log_path = os.path.join(self.tmp_dir, "blender_log.txt")
+        self.output_blend = output_blend
 
-        os.makedirs(self.tmp_dir, exist_ok=True)
-
-    def __call__(self, script: str, target: str = None):
+    def __call__(self, script: str, target: str = None, location=None):
         """
         Creates a temporary script file and runs it inside Blender,
         saving the .blend file to `target` if specified, otherwise
         uses `self.output_blend`.
         """
+
         if target is None:
             target = self.output_blend
 
-        if not os.path.exists(self.tmp_dir):
-            os.makedirs(self.tmp_dir)
-        temp_script_path = os.path.join(self.tmp_dir, "sceneprog_exec.py")
-
-        # Save the script content to a temporary file
+        if location is None:
+            location = os.getcwd()
+            
+        temp_script_path = os.path.join(location, "temp_script.py")
         with open(temp_script_path, "w") as f:
             f.write(script)
 
@@ -57,57 +98,36 @@ export BLENDER_PYTHON=/Applications/Blender.app/Contents/Resources/4.3/python/bi
         # Cleanup the temporary script file
         if os.path.exists(temp_script_path):
             os.remove(temp_script_path)
-
+        
         return output
+    
+    def run_script(self, temp_script_path, target, show_output=False):
+        script_abs = os.path.abspath(temp_script_path)
+        script_dir = os.path.dirname(script_abs)
+        self.log_path = os.path.join(script_dir, "blender_log.txt")
 
-    def run_script(self, script_path, show_output=False, target=None):
-        """
-        Auto-inject script_path's directory into sys.path, run script, and save .blend.
-        This allows imports from the same directory (like `import api`) to work automatically.
-        """
-        if not os.path.exists(script_path):
-            print(f"❌ Error: Script {script_path} not found.")
-            sys.exit(1)
+        with open(temp_script_path, 'r') as f:
+            script = f.read()
+
         if target is None:
             target = self.output_blend
-
-        script_abs = os.path.abspath(script_path)
-        script_dir = os.path.dirname(script_abs)
-
-        # We'll create a temporary "wrapper script" that:
-        #  1) Adds `script_path`'s directory to sys.path
-        #  2) Reads and exec's the original script
-        #  3) Saves the .blend file
-        wrapper_script = os.path.join(self.tmp_dir, "wrapper_script.py")
-
-        wrapper_code = f"""\
-import sys, os
-
-# Add the directory of the user script to sys.path
-user_script_path = r"{script_abs}"
-user_script_dir = r"{script_dir}"
-if user_script_dir not in sys.path:
-    sys.path.insert(0, user_script_dir)
-
-# Now run the original script
-with open(user_script_path, "rb") as f:
-    code = compile(f.read(), user_script_path, "exec")
-exec(code, {{}}, {{}})
-
-# Finally, save the .blend file
+        code = f"""
+import sys
+sys.path.append('{script_dir}')
+{script}
 import bpy
 bpy.ops.wm.save_mainfile(filepath=r"{os.path.abspath(target)}")
 """
+        
+        self.temp_exec_path = os.path.join(script_dir,"temp_exec.py")
 
-        with open(wrapper_script, "w") as f:
-            f.write(wrapper_code)
+        with open(self.temp_exec_path, "w") as f:
+            f.write(code)
 
-        print(f"🚀 Running script {script_path} in Blender (via wrapper) and saving to {target}...")
-
-        cmd = (
-            f"{self.blender_path} --background --python {wrapper_script} "
-            f"2> {self.log_path}"
-        )
+        print(f"🚀 Running script {temp_script_path} in Blender (via wrapper) and saving to {target}...")
+        
+        cmd = f"cd {script_dir} && {self.blender_path} --background --python {self.temp_exec_path} 2> {self.log_path}"
+        
         os.system(cmd)
 
         # Read Blender's stderr (the log)
@@ -118,7 +138,14 @@ bpy.ops.wm.save_mainfile(filepath=r"{os.path.abspath(target)}")
         if show_output:
             print(blender_output)
 
-        return blender_output
+        return None, blender_output
+
+    def cleanup(self):
+        if os.path.exists(self.log_path):
+            os.remove(self.log_path)
+
+        if os.path.exists(self.temp_exec_path):
+            os.remove(self.temp_exec_path)
 
     def install_packages(self, packages, hard_reset=False):
         """Installs Python packages inside Blender's environment."""
@@ -168,14 +195,130 @@ bpy.ops.wm.save_mainfile(filepath=r"{os.path.abspath(target)}")
         else:
             print(f"✅ No user modules found in {self.user_modules}")
 
-    def cleanup(self):
-        """🔥 Deletes the temporary directory `blender_tmp` after execution."""
-        if os.path.exists(self.tmp_dir):
-            shutil.rmtree(self.tmp_dir)
-            print(f"🗑️ Cleanup: Deleted {self.tmp_dir}")
+class SceneProgExecWithDebugger(SceneProgExec):
+    def __init__(self, api_path=None,
+                 output_blend="scene_output.blend",
+                 max_attempts=5,
+                 ):
+        super().__init__(output_blend)
+    
+        self.MAX_ATTEMPTS = max_attempts
+        self.exec = SceneProgExec()
+        self.api_path = api_path
+        if api_path is not None:
+            with open(api_path, 'r') as f:
+                self.apis = f.read()
+        else:
+            self.apis = None
+
+        header = f"""
+You should go through the code and find the errors including those caused by wrong use of the API. Then you must respond with the corrected code.
+Only add the code that is necessary to fix the errors. Don't add any other code.
+"""
+        default_system_desc = f"""
+First identify the errors and then respond with the corrected code. You should also pay attention to the exceptions raised while running the code and find ways to fix them. 
+You are not supposed to change placement values or settings in the code, but only watch out for reasons due to which the code may crash!
+Lastly, don't save or export the scene, I will do that myself later.
+Also, you don't have to worry about importing additional modules. They are already imported for you.In case the code includes imports, make sure that debugged code includes the same imports.
+Make sure that the debugged code does what the original code was intended to do and that it is not doing anything extra. The only thing you have to do is to fix the errors.
+Example:
+code:
+a = 1+1
+b = 1+a
+c = 1++b
+print("Hello, world!"
+
+debugged code:
+a = 1+1
+b = 1+a
+c = 1+b
+print("Hello, world!")
+
+code:
+import numpy as np
+a = np.array([1,2,3])
+b = np.array([4,5,6],[7,8,9])
+
+debugged code:
+import numpy as np
+a = np.array([1,2,3])
+b = np.array([[4,5,6],[7,8,9]])
+
+"""
+        if self.apis is not None:
+            api_usage = f"""
+Please refer to the API documentation:\n{self.apis}.
+"""
+        else:
+            api_usage = ""
+
+        system_desc = header + api_usage + default_system_desc
+        self.llm_debugger = LLM(name='llm_debugger', system_desc=system_desc, response_format='code',use_cache=False)
+        
+        header = f"""
+You should go through the code as well as the traceback and find the errors including those caused by wrong use of the API. Then you must respond with the corrected code.
+"""
+
+        system_desc = header + api_usage + default_system_desc
+        self.debugger = LLM(name='trace_debugger', system_desc=system_desc, response_format='code',use_cache=False)
+
+        self.checker = LLM(name='debug_checker', system_desc="You are supposed to go through the stdout and respond whether there are any errors or not. In case you don't see any errors (ignore warnings!) respond in a JSON format with 'errors': 'False'. Else, respond with 'errors': 'True'.", response_format='json',use_cache=False)
+
+    def __call__(self, script: str, target: str = None, debug=True, silent=True):
+        if not debug:
+            return script,self.exec(script)
+        script = self.llm_debugger(script)
+        if not silent:
+            print("Attempting to run the code...")
+        traceback = self.exec(script)
+
+        with tqdm(total=self.MAX_ATTEMPTS, desc="Debugging Attempts") as pbar:
+            for i in range(self.MAX_ATTEMPTS):
+                checker = self.checker(traceback)
+                if checker['errors']=='False':
+                    if not silent:
+                        print("Success!")
+                    return script, traceback
+                prompt = f"Input: {script}.\nErrors: {traceback}.\nDebugged code:"
+                script = self.debugger(prompt)
+                traceback = self.exec(script)
+                pbar.update(1)
+
+        raise Exception(f"Failed to execute the code. Debugging attempts exhausted after {self.MAX_ATTEMPTS} attempts. Last traceback: \n{traceback} \n\nLast debugged code: \n{script}")
+    
+    def run_script(self, script_path, show_output=False, target=None, debug=True, silent=True):
+        if not debug:
+            return self.exec.run_script(script_path, target, show_output)
+        
+        with open(script_path, 'r') as f:
+            script = f.read()
+
+        script = self.llm_debugger(script)
+        if not silent:
+            print("Attempting to run the code...")
+        _, traceback = self.exec(script, target=target, location=os.path.dirname(script_path))
+        
+        with tqdm(total=self.MAX_ATTEMPTS, desc="Debugging Attempts") as pbar:
+            for i in range(self.MAX_ATTEMPTS):
+                checker = self.checker(traceback)
+                if checker['errors']=='False':
+                    if not silent:
+                        print("Success!")
+                    return script, traceback
+                if not silent:
+                    print(f"Attempt {i+1} failed. Debugging...")
+                prompt = f"Input: {script}.\nErrors: {traceback}.\nDebugged code:"
+                print(prompt)
+                script = self.debugger(prompt)
+                _, traceback = self.exec(script, target=target, location=os.path.dirname(script_path))
+                pbar.update(1)
+
+        raise Exception(f"Failed to execute the code. Debugging attempts exhausted after {self.MAX_ATTEMPTS} attempts. Last traceback: \n{traceback} \n\nLast debugged code: \n{script}")
+    
 
 def main():
-    parser = argparse.ArgumentParser(description="SceneProgExecutor CLI")
+    import argparse
+    parser = argparse.ArgumentParser(description="SceneProgExec CLI")
     subparsers = parser.add_subparsers(dest="command")
 
     # Subcommand: install packages
@@ -187,19 +330,33 @@ def main():
     run_parser = subparsers.add_parser("run", help="Run a Python script inside Blender and save as a .blend file")
     run_parser.add_argument("script_path")
     run_parser.add_argument("--target", required=True, help="Path to save the resulting .blend file")
-
-    # Subcommand: reset third-party packages
-    reset_parser = subparsers.add_parser("reset", help="Remove all third-party packages in Blender")
-
+    run_parser.add_argument("--debug", action="store_true")
+    run_parser.add_argument("--silent", action="store_true")
+    run_parser.add_argument("--api_path", default=None, help="Path to the API documentation")
+    run_parser.add_argument("--max_attempts", default=5, type=int)
+   
     args = parser.parse_args()
-    executor = SceneProgExecutor()
+    executor = SceneProgExecWithDebugger(api_path=args.api_path, max_attempts=args.max_attempts)
 
     if args.command == "install":
         executor.install_packages(args.packages, hard_reset=args.reset)
     elif args.command == "run":
-        executor.run_script(args.script_path, show_output=True, target=args.target)
+        script, traceback = executor.run_script(args.script_path, show_output=True, target=args.target, debug=args.debug, silent=args.silent)
+        print("*********** SCRIPT ***********")
+        print(script)
+        print("*********** TRACEBACK ***********")
+        print(traceback)
+        print("*********** END ***********")
     elif args.command == "reset":
         executor._delete_all_third_party_packages()
 
 if __name__ == "__main__":
     main()
+
+# exec = SceneProgExec()
+# exec.run_script('/Users/kunalgupta/Documents/scenecraft/test4.py', '/Users/kunalgupta/Documents/scenecraft/scene_output.blend')
+
+
+
+    
+
