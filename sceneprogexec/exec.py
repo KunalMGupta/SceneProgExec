@@ -75,7 +75,7 @@ export BLENDER_PYTHON=/Applications/Blender.app/Contents/Resources/4.3/python/bi
         
         self.output_blend = output_blend
 
-    def __call__(self, script: str, target: str = None, location=None):
+    def __call__(self, script: str, target: str = None, location=None, no_save=False):
         """
         Creates a temporary script file and runs it inside Blender,
         saving the .blend file to `target` if specified, otherwise
@@ -93,7 +93,7 @@ export BLENDER_PYTHON=/Applications/Blender.app/Contents/Resources/4.3/python/bi
             f.write(script)
 
         # Run the script inside Blender and save to `target`
-        output = self.run_script(temp_script_path, target=target)
+        output = self.run_script(temp_script_path, target=target, no_save=no_save)
 
         # Cleanup the temporary script file
         if os.path.exists(temp_script_path):
@@ -101,7 +101,7 @@ export BLENDER_PYTHON=/Applications/Blender.app/Contents/Resources/4.3/python/bi
         
         return output
     
-    def run_script(self, temp_script_path, target, show_output=False):
+    def run_script(self, temp_script_path, target, show_output=False, no_save=False):
         script_abs = os.path.abspath(temp_script_path)
         script_dir = os.path.dirname(script_abs)
         self.log_path = os.path.join(script_dir, "blender_log.txt")
@@ -111,13 +111,21 @@ export BLENDER_PYTHON=/Applications/Blender.app/Contents/Resources/4.3/python/bi
 
         if target is None:
             target = self.output_blend
-        code = f"""
+
+        if no_save:
+            code = f"""
+import sys
+sys.path.append('{script_dir}')
+{script}
+"""
+        else:            
+            code = f"""
 import sys
 sys.path.append('{script_dir}')
 {script}
 import bpy
 bpy.ops.wm.save_mainfile(filepath=r"{os.path.abspath(target)}")
-"""
+    """
         
         self.temp_exec_path = os.path.join(script_dir,"temp_exec.py")
 
@@ -265,13 +273,13 @@ You should go through the code as well as the traceback and find the errors incl
 
         self.checker = LLM(name='debug_checker', system_desc="You are supposed to go through the stdout and respond whether there are any errors or not. In case you don't see any errors (ignore warnings!) respond in a JSON format with 'errors': 'False'. Else, respond with 'errors': 'True'.", response_format='json',use_cache=False)
 
-    def __call__(self, script: str, target: str = None, debug=True, silent=True):
+    def __call__(self, script: str, target: str = None, debug=True, silent=True, no_save=False, location=None):
         if not debug:
-            return script,self.exec(script)
+            return script, self.exec(script, target, location, no_save)
         script = self.llm_debugger(script)
         if not silent:
             print("Attempting to run the code...")
-        traceback = self.exec(script)
+        traceback = self.exec(script, target, location, no_save)
 
         with tqdm(total=self.MAX_ATTEMPTS, desc="Debugging Attempts") as pbar:
             for i in range(self.MAX_ATTEMPTS):
@@ -282,14 +290,14 @@ You should go through the code as well as the traceback and find the errors incl
                     return script, traceback
                 prompt = f"Input: {script}.\nErrors: {traceback}.\nDebugged code:"
                 script = self.debugger(prompt)
-                traceback = self.exec(script)
+                traceback = self.exec(script, target, location, no_save)
                 pbar.update(1)
 
         raise Exception(f"Failed to execute the code. Debugging attempts exhausted after {self.MAX_ATTEMPTS} attempts. Last traceback: \n{traceback} \n\nLast debugged code: \n{script}")
     
-    def run_script(self, script_path, show_output=False, target=None, debug=True, silent=True):
+    def run_script(self, script_path, show_output=False, target=None, debug=True, silent=True, no_save=False):
         if not debug:
-            return self.exec.run_script(script_path, target, show_output)
+            return self.exec.run_script(script_path, target, show_output, no_save)
         
         with open(script_path, 'r') as f:
             script = f.read()
@@ -354,11 +362,6 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-# exec = SceneProgExec()
-# exec.run_script('/Users/kunalgupta/Documents/scenecraft/test4.py', '/Users/kunalgupta/Documents/scenecraft/scene_output.blend')
-
-
 
     
 
