@@ -6,9 +6,7 @@
 ✅ **Execute Python scripts inside Blender**  
 ✅ **Install Python packages in Blender's Python environment**  
 ✅ **Perform a full reset (remove all third-party packages)**  
-✅ **Automatically cleans up temporary files after execution**  
 ✅ **Works both as a CLI tool and a Python module**  
-✅ **Debugging with LLM**  
 ---
 
 ## 📥 Installation
@@ -53,12 +51,6 @@ sceneprogexec run my_script.py --target my_scene.blend
 ```
 ✅ Runs `my_script.py` inside **Blender**.
 
-### **🔹 Run a Python Script Inside Blender with Debugging**
-```bash
-sceneprogexec run my_script.py --target my_scene.blend --debug
-```
-✅ Runs `my_script.py` inside **Blender** with debugging.
-
 ---
 
 ### **🔹 Install Packages Inside Blender**
@@ -101,12 +93,6 @@ import bpy
 print("Hello, World!")
 """
 executor(script, target="test.blend")
-```
-
-### **🔹 Run a Python Script Inside Blender with Debugging**
-```python
-executor = SceneProgExec()
-executor.run_script("my_script.py", debug=True)
 ```
 
 ---
