@@ -52,8 +52,11 @@ class BlenderPythonDetector:
         return detected_blender_path, detected_python_path            
 
 class SceneProgExec:
-    def __init__(self):
-
+    def __init__(self, caller_path=None):
+        '''
+        caller_path: str - Path to the caller script
+        '''
+        self.caller_path = caller_path
         self.blender_path, self.blender_python = BlenderPythonDetector()()
         
         if self.blender_path is None or self.blender_python is None:
@@ -97,10 +100,8 @@ export BLENDER_PYTHON=/Applications/Blender.app/Contents/Resources/4.3/python/bi
         script_dir = os.path.dirname(script_abs)
         log_name = os.path.basename(script_path).replace(".py", ".log")
         self.log_path = os.path.join(script_dir, log_name)
-        
         with open(script_path, "r") as f:
             script = f.read()
-
         code = f"""
 import sys
 sys.path.append('{script_dir}')
@@ -112,6 +113,13 @@ sys.path.append('{script_dir}')
 import bpy
 bpy.ops.wm.save_mainfile(filepath=r"{os.path.abspath(target)}")
 """
+        if self.caller_path:
+            code = f"""
+import sys
+sys.path.append(r"{self.caller_path}")
+{code}
+"""
+        
         self.tmp_exec_path = script_abs.split(".py")[0] + "_exec.py"
         with open(self.tmp_exec_path, "w") as f:
             f.write(code)
