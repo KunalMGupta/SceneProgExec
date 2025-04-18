@@ -31,12 +31,16 @@ class BlenderPythonDetector:
 
             # different versions of blender have different versions of python in Resources
             resources_dir = os.path.join(base_dir, "Resources")
-
             # We only care the newest version of python in Resources now
             # export BLENDER_PYTHON=/Applications/Blender.app/Contents/Resources/4.3/python/bin/python3.11
-            # TODO: Compatible with different versions of Blender
-            if os.path.exists(os.path.join(resources_dir, "4.3", "python", "bin", "python3.11")):
-                python_path = os.path.join(resources_dir, "4.3", "python", "bin", "python3.11")
+            for version in os.listdir(resources_dir):
+                try:
+                    version_num = float(version)
+                except:
+                    continue
+            
+            if os.path.exists(os.path.join(resources_dir, str(version_num), "python", "bin", "python3.11")):
+                python_path = os.path.join(resources_dir, str(version_num), "python", "bin", "python3.11")
                 return python_path
             else:
                 print("Blender Python not found")
