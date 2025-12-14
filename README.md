@@ -28,13 +28,13 @@ Before using `SceneProgExec`, set the required environment variables:
 
 ```bash
 export BLENDER_PATH=/Applications/Blender.app/Contents/MacOS/Blender
-export BLENDER_PYTHON=/Applications/Blender.app/Contents/Resources/4.3/python/bin/python3.11
+export BLENDER_PYTHON=/Applications/Blender.app/Contents/Resources/5.0/python/bin/python3.11
 ```
 
 To make this **permanent**, add the lines to your `~/.bashrc` or `~/.zshrc`:
 ```bash
 echo 'export BLENDER_PATH=/Applications/Blender.app/Contents/MacOS/Blender' >> ~/.zshrc
-echo 'export BLENDER_PYTHON=/Applications/Blender.app/Contents/Resources/4.3/python/bin/python3.11' >> ~/.zshrc
+echo 'export BLENDER_PYTHON=/Applications/Blender.app/Contents/Resources/5.0/python/bin/python3.11' >> ~/.zshrc
 source ~/.zshrc
 ```
 

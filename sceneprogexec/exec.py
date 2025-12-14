@@ -2,58 +2,147 @@ import os
 import subprocess
 import shutil
 import platform
+import re
+from pathlib import Path
+
+# --- helpers for robust detection (added) ------------------------------
+
+def _is_executable(p: Path) -> bool:
+    return p.is_file() and os.access(str(p), os.X_OK)
+
+def _read_highest_blender_version(base: Path) -> str | None:
+    """
+    Returns highest 'major.minor' dir name inside `base` (e.g. '4.3', '3.6').
+    Works for:
+      macOS: .../Blender.app/Contents/Resources/<ver>/
+      Linux: .../blender-<ver>-linux-x64/<ver>/
+    """
+    best = None
+    if not base.exists():
+        return None
+    for child in base.iterdir():
+        m = re.fullmatch(r"(\d+\.\d+)", child.name)
+        if m and child.is_dir():
+            tup = tuple(map(int, m.group(1).split(".")))
+            if best is None or tup > best[0]:
+                best = (tup, m.group(1))
+    return best[1] if best else None
+
+def _guess_python_binary(version_dir: Path) -> Path | None:
+    """
+    Inside <...>/<ver>/python/bin pick the highest python3.x that exists.
+    """
+    bin_dir = version_dir / "python" / "bin"
+    if not bin_dir.is_dir():
+        return None
+    cands = [p for p in bin_dir.iterdir() if p.name.startswith("python3") and _is_executable(p)]
+    if not cands:
+        return None
+    # prefer higher minor (python3.11 over python3.10, etc.)
+    cands.sort(key=lambda p: tuple(map(int, re.findall(r"\d+", p.name))), reverse=True)
+    return cands[0]
+
+# ----------------------------------------------------------------------
+
 
 class BlenderPythonDetector:
     def __init__(self):
         pass
 
     def find_blender_path(self):
+        """
+        Priority:
+          1) BLENDER_PATH env
+          2) OS-specific common locations
+          3) 'blender' on PATH (Linux)
+        """
+        env_path = os.environ.get("BLENDER_PATH")
+        if env_path and _is_executable(Path(env_path)):
+            return env_path
+
         system = platform.system()
         if system == "Darwin":
-            # print("Running on macOS")
-            if os.path.exists("/Applications/Blender.app/Contents/MacOS/Blender"):
-                return "/Applications/Blender.app/Contents/MacOS/Blender"
-        else:
-            print("Blender not found")
-            return None
-        # TODO: Add Linux and Windows paths
-        # elif system == "Linux":
-        # elif system == "Windows":
+            # macOS default app path
+            mac_exec = Path("/Applications/Blender.app/Contents/MacOS/Blender")
+            if _is_executable(mac_exec):
+                return str(mac_exec)
+
+        elif system == "Linux":
+            # common system installs
+            for p in ["/usr/bin/blender", "/usr/local/bin/blender", "/snap/bin/blender"]:
+                if _is_executable(Path(p)):
+                    return p
+            # PATH fallback
+            which = shutil.which("blender")
+            if which and _is_executable(Path(which)):
+                return which
+
+        print("Blender not found")
+        return None
 
     def find_blender_python_path(self, blender_path):
-        system = platform.system()
+        """
+        Priority:
+          1) BLENDER_PYTHON env
+          2) Derive from bundle layout (macOS/Linux portable tarball)
+          3) As a last resort, ask Blender for sys.executable
+        """
+        env_py = os.environ.get("BLENDER_PYTHON")
+        if env_py and _is_executable(Path(env_py)):
+            return env_py
+
         if not blender_path:
             return None
 
-        if system == "Darwin":  # macOS
-            # /Applications/Blender.app/Contents/MacOS/Blender 
-            base_dir = os.path.dirname(os.path.dirname(blender_path))
+        system = platform.system()
+        bpath = Path(blender_path)
 
-            # different versions of blender have different versions of python in Resources
-            resources_dir = os.path.join(base_dir, "Resources")
-            # We only care the newest version of python in Resources now
-            # export BLENDER_PYTHON=/Applications/Blender.app/Contents/Resources/4.3/python/bin/python3.11
-            for version in os.listdir(resources_dir):
-                try:
-                    version_num = float(version)
-                except:
-                    continue
-            
-            if os.path.exists(os.path.join(resources_dir, str(version_num), "python", "bin", "python3.11")):
-                python_path = os.path.join(resources_dir, str(version_num), "python", "bin", "python3.11")
-                return python_path
-            else:
-                print("Blender Python not found")
-                return None
+        if system == "Darwin":
+            # /Applications/Blender.app/Contents/MacOS/Blender
+            contents = bpath.parent                 # .../Contents/MacOS
+            resources = contents.parent / "Resources"
+            ver = _read_highest_blender_version(resources)
+            if ver:
+                pybin = _guess_python_binary(resources / ver)
+                if pybin:
+                    return str(pybin)
+            print("Blender Python not found")
+            return None
 
-        # TODO: Add Linux and Windows paths
-        # elif system == "Linux":
-        # elif system == "Windows":
+        elif system == "Linux":
+            # Portable layout (like your example):
+            #   .../blender-3.6.0-linux-x64/blender
+            #   .../blender-3.6.0-linux-x64/3.6/python/bin/python3.10
+            base = bpath.parent
+            ver = _read_highest_blender_version(base)
+            if ver:
+                pybin = _guess_python_binary(base / ver)
+                if pybin:
+                    return str(pybin)
+
+            # Last resort: query Blender itself (works for system installs too)
+            try:
+                out = subprocess.run(
+                    [str(bpath), "--background", "--python-expr", "import sys; print(sys.executable)"],
+                    check=True, capture_output=True, text=True
+                )
+                cand = out.stdout.strip().splitlines()[-1].strip()
+                if cand and Path(cand).exists():
+                    return cand
+            except Exception:
+                pass
+
+            print("Blender Python not found")
+            return None
+
+        # Windows/other not handled here
+        return None
 
     def __call__(self):
         detected_blender_path = self.find_blender_path()
         detected_python_path = self.find_blender_python_path(detected_blender_path)
         return detected_blender_path, detected_python_path            
+
 
 class SceneProgExec:
     def __init__(self, caller_path=None):
@@ -64,25 +153,41 @@ class SceneProgExec:
         self.blender_path, self.blender_python = BlenderPythonDetector()()
         
         if self.blender_path is None or self.blender_python is None:
-            msg = """
+            msg = f"""
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-BLENDER_PATH and BLENDER_PYTHON environment variables must be set.
-Example:
-export BLENDER_PATH=/Applications/Blender.app/Contents/MacOS/Blender
-export BLENDER_PYTHON=/Applications/Blender.app/Contents/Resources/4.3/python/bin/python3.11
+BLENDER_PATH and BLENDER_PYTHON environment variables must be set or detectable.
+
+- BLENDER_PATH (env): {os.environ.get('BLENDER_PATH') or '(not set)'}
+- BLENDER_PYTHON (env): {os.environ.get('BLENDER_PYTHON') or '(not set)'}
+- Detected BLENDER_PATH: {self.blender_path or '(none)'}
+- Detected BLENDER_PYTHON: {self.blender_python or '(none)'}
+
+Examples:
+macOS:
+  export BLENDER_PATH=/Applications/Blender.app/Contents/MacOS/Blender
+  export BLENDER_PYTHON=/Applications/Blender.app/Contents/Resources/4.3/python/bin/python3.11
+
+Linux (portable tarball like yours):
+  export BLENDER_PATH=/kunal/vlmaterial/blender-3.6.0-linux-x64/blender
+  export BLENDER_PYTHON=/kunal/vlmaterial/blender-3.6.0-linux-x64/3.6/python/bin/python3.10
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
             """
             raise Exception(msg)
         
         # Dynamically extract Blender version from Python path
-        import re
-        match = re.search(r'Resources/([\d.]+)/python', self.blender_python)
+        match = re.search(r'[\\/](\d+\.\d+)[\\/]+python[\\/]', self.blender_python)
         blender_version = match.group(1) if match else "4.3"
 
         # Set the user modules path
-        self.user_modules = os.path.expanduser(
-            f"~/Library/Application Support/Blender/{blender_version}/scripts/modules"
-        )
+        if platform.system() == "Darwin":
+            self.user_modules = os.path.expanduser(
+                f"~/Library/Application Support/Blender/{blender_version}/scripts/modules"
+            )
+        else:
+            # Linux default user modules path
+            self.user_modules = os.path.expanduser(
+                f"~/.config/blender/{blender_version}/scripts/modules"
+            )
         
     def __call__(self, script:str, target:str=None, verbose=False):
         location = os.getcwd()
