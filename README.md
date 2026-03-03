@@ -40,6 +40,7 @@ source ~/.zshrc
 
 Important! In case running this inside a linux container install the following dependencies:
 ```bash
+apt update
 apt install -y libx11-6 libxi6 libxxf86vm1 libxrender1 libgl1 libxfixes3 libxkbcommon-x11-0
 ```
 
