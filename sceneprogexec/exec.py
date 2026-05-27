@@ -4,6 +4,7 @@ import shutil
 import platform
 import re
 import shlex
+import sys
 from pathlib import Path
 
 # --- helpers for robust detection (added) ------------------------------
@@ -12,12 +13,6 @@ def _is_executable(p: Path) -> bool:
     return p.is_file() and os.access(str(p), os.X_OK)
 
 def _read_highest_blender_version(base: Path) -> str | None:
-    """
-    Returns highest 'major.minor' dir name inside `base` (e.g. '4.3', '3.6').
-    Works for:
-      macOS: .../Blender.app/Contents/Resources/<ver>/
-      Linux: .../blender-<ver>-linux-x64/<ver>/
-    """
     best = None
     if not base.exists():
         return None
@@ -30,9 +25,6 @@ def _read_highest_blender_version(base: Path) -> str | None:
     return best[1] if best else None
 
 def _guess_python_binary(version_dir: Path) -> Path | None:
-    """
-    Inside <...>/<ver>/python/bin pick the highest python3.x that exists.
-    """
     bin_dir = version_dir / "python" / "bin"
     if not bin_dir.is_dir():
         return None
@@ -50,12 +42,6 @@ class BlenderPythonDetector:
         pass
 
     def find_blender_path(self):
-        """
-        Priority:
-          1) BLENDER_PATH env
-          2) OS-specific common locations
-          3) 'blender' on PATH (Linux)
-        """
         env_path = os.environ.get("BLENDER_PATH")
         if env_path and _is_executable(Path(env_path)):
             return env_path
@@ -80,12 +66,6 @@ class BlenderPythonDetector:
         return None
 
     def find_blender_python_path(self, blender_path):
-        """
-        Priority:
-          1) BLENDER_PYTHON env
-          2) Derive from bundle layout (macOS/Linux portable tarball)
-          3) As a last resort, ask Blender for sys.executable
-        """
         env_py = os.environ.get("BLENDER_PYTHON")
         if env_py and _is_executable(Path(env_py)):
             return env_py
@@ -147,10 +127,6 @@ class BlenderPythonDetector:
 
 class SceneProgExec:
     def __init__(self, caller_path=None):
-        """
-        caller_path: str - Path to the caller script
-        """
-
         self.caller_path = caller_path
         self.blender_path, self.blender_python = BlenderPythonDetector()()
 
@@ -264,28 +240,19 @@ Linux:
 
         result = subprocess.run(
             cmd,
-            cwd=script_dir,
-            capture_output=True,
-            text=True
+            cwd=script_dir
         )
 
-        blender_output = "\n".join(
-            part for part in [result.stdout.strip(), result.stderr.strip()]
-            if part
-        )
+        blender_output = f"Blender exited with return code {result.returncode}"
 
         with open(self.log_path, "w") as log_file:
             log_file.write(blender_output)
 
         self.cleanup()
 
-        if verbose:
-            print(blender_output)
-
         return blender_output
 
     def cleanup(self):
-
         if os.path.exists(self.tmp_exec_path):
             os.remove(self.tmp_exec_path)
 
@@ -346,7 +313,6 @@ Linux:
         """Deletes all user-installed packages from Blender's user module directory."""
 
         if os.path.exists(self.user_modules):
-
             try:
                 shutil.rmtree(self.user_modules)
                 print(f"🗑️ Deleted all modules in {self.user_modules}")
@@ -374,9 +340,9 @@ def main():
     run_parser.add_argument("--verbose", action="store_true")
 
     subparsers.add_parser("reset", help="Reset all third-party packages and user modules")
-    import sys
+
     argv = sys.argv[1:]
-    # Preserve everything after --
+
     if "--" in argv:
         sep_idx = argv.index("--")
         cli_args = argv[:sep_idx]
@@ -384,6 +350,7 @@ def main():
     else:
         cli_args = argv
         script_args = []
+
     args = parser.parse_args(cli_args)
 
     executor = SceneProgExec()
@@ -404,6 +371,7 @@ def main():
 
     elif args.command == "reset":
         executor._delete_all_third_party_packages()
+
 
 if __name__ == "__main__":
     main()

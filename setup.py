@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as f:
 
 setup(
     name="sceneprogexec",
-    version="0.2.3",
+    version="0.2.4",
     packages=find_packages(),  # Automatically finds the 'sceneprogexec' package (and any sub-packages)
     entry_points={
         "console_scripts": [
