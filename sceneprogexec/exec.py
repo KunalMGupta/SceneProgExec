@@ -200,6 +200,17 @@ Linux:
 
         code = (
             "import sys\n"
+            "\n"
+            "# run_script reads this process's stdout through a pipe, and Blender's\n"
+            "# embedded Python block-buffers a piped stdout (it ignores\n"
+            "# PYTHONUNBUFFERED), which would withhold output until several KB\n"
+            "# accumulate. Force line buffering so progress and tracebacks appear live.\n"
+            "try:\n"
+            "    sys.stdout.reconfigure(line_buffering=True)\n"
+            "    sys.stderr.reconfigure(line_buffering=True)\n"
+            "except Exception:\n"
+            "    pass\n"
+            "\n"
             f"sys.path.append(r'{script_dir}')\n"
             "\n"
             "# Make argparse inside the user script see only script arguments.\n"
@@ -244,6 +255,9 @@ Linux:
         # Blender exits 0 even when the script raises, so the returncode carries no
         # failure signal -- the traceback text in this output is the only signal
         # downstream consumers (e.g. SceneProgDebugger) have to work with.
+        #
+        # The wrapper written above forces line buffering inside Blender, which is
+        # what keeps this pipe delivering output live rather than in blocks.
         process = subprocess.Popen(
             cmd,
             cwd=script_dir,
