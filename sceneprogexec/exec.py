@@ -128,6 +128,7 @@ class BlenderPythonDetector:
 class SceneProgExec:
     def __init__(self, caller_path=None):
         self.caller_path = caller_path
+        self.last_returncode = None
         self.blender_path, self.blender_python = BlenderPythonDetector()()
 
         if self.blender_path is None or self.blender_python is None:
@@ -238,12 +239,34 @@ Linux:
             *script_args,
         ]
 
-        result = subprocess.run(
+        # Blender is run with stderr folded into stdout and streamed line by line,
+        # so the caller still sees output live while we retain a copy. Note that
+        # Blender exits 0 even when the script raises, so the returncode carries no
+        # failure signal -- the traceback text in this output is the only signal
+        # downstream consumers (e.g. SceneProgDebugger) have to work with.
+        process = subprocess.Popen(
             cmd,
-            cwd=script_dir
+            cwd=script_dir,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
         )
 
-        blender_output = f"Blender exited with return code {result.returncode}"
+        captured = []
+        for line in process.stdout:
+            sys.stdout.write(line)
+            sys.stdout.flush()
+            captured.append(line)
+        process.stdout.close()
+        process.wait()
+
+        self.last_returncode = process.returncode
+
+        blender_output = (
+            f"{''.join(captured)}"
+            f"Blender exited with return code {process.returncode}"
+        )
 
         with open(self.log_path, "w") as log_file:
             log_file.write(blender_output)
@@ -359,15 +382,17 @@ def main():
         executor.install_packages(args.packages, hard_reset=args.reset)
 
     elif args.command == "run":
-        output = executor.run_script(
+        executor.run_script(
             args.script_path,
             target=args.target,
             verbose=args.verbose,
             script_args=script_args
         )
 
-        if not args.verbose and output:
-            print(output)
+        # Blender's output has already been streamed live by run_script, so only
+        # the exit summary is echoed here to avoid printing everything twice.
+        if not args.verbose:
+            print(f"Blender exited with return code {executor.last_returncode}")
 
     elif args.command == "reset":
         executor._delete_all_third_party_packages()
